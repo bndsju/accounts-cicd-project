@@ -18,8 +18,19 @@ spec:
       description: Full name of the image to build and push (e.g. image-registry.openshift-image-registry.svc:5000/ns/app:latest)
 
   tasks:
-    # 1. Clone the source code
+    # 1. Clean up the workspace before cloning
+    - name: cleanup
+      taskRef:
+        name: cleanup
+        kind: Task
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
+
+    # 2. Clone the source code
     - name: fetch-repo
+      runAfter:
+        - cleanup
       taskRef:
         name: git-clone
         kind: ClusterTask
@@ -32,7 +43,7 @@ spec:
         - name: revision
           value: $(params.branch)
 
-    # 2. Lint step
+    # 3. Lint step
     - name: lint
       runAfter:
         - fetch-repo
@@ -46,7 +57,7 @@ spec:
         - name: args
           value: ["service", "--count", "--max-complexity=10", "--max-line-length=127", "--statistics"]
 
-    # 3. Unit test step
+    # 4. Unit test step
     - name: tests
       runAfter:
         - fetch-repo
@@ -62,7 +73,7 @@ spec:
         - name: database_uri
           value: "sqlite:///test.db"
 
-    # 4. Build the image (runs only after lint + tests pass)
+    # 5. Build the image (runs only after lint + tests pass)
     - name: build
       runAfter:
         - lint
@@ -77,7 +88,7 @@ spec:
         - name: IMAGE
           value: $(params.build-image)
 
-    # 5. Deploy step
+    # 6. Deploy step
     - name: deploy
       runAfter:
         - build
