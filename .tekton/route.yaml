@@ -1,0 +1,10 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: accounts
+spec:
+  to:
+    kind: Service
+    name: accounts
+  port:
+    targetPort: http

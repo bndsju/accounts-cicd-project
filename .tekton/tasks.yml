@@ -1,0 +1,55 @@
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: flake8
+spec:
+  workspaces:
+    - name: source
+  params:
+    - name: image
+      description: The container image with flake8 installed
+      default: "python:3.9-slim"
+    - name: args
+      type: array
+      description: Arguments passed to flake8
+      default: []
+  steps:
+    - name: lint
+      image: $(params.image)
+      workingDir: $(workspaces.source.path)
+      script: |
+        #!/bin/bash
+        set -e
+        pip install --no-cache-dir flake8
+        flake8 $(params.args[*])
+---
+apiVersion: tekton.dev/v1
+kind: Task
+metadata:
+  name: nose
+spec:
+  workspaces:
+    - name: source
+  params:
+    - name: image
+      description: The container image with the app's runtime and deps installed
+      default: "python:3.9-slim"
+    - name: args
+      type: array
+      description: Arguments passed to nosetests
+      default: ["-v"]
+    - name: database_uri
+      description: Environment variable for the test database connection
+      default: "sqlite:///test.db"
+  steps:
+    - name: test
+      image: $(params.image)
+      workingDir: $(workspaces.source.path)
+      env:
+        - name: DATABASE_URI
+          value: $(params.database_uri)
+      script: |
+        #!/bin/bash
+        set -e
+        pip install --no-cache-dir -r requirements.txt
+        nosetests $(params.args[*])

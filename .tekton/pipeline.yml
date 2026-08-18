@@ -1,0 +1,95 @@
+apiVersion: tekton.dev/v1
+kind: Pipeline
+metadata:
+  name: cd-pipeline
+spec:
+  workspaces:
+    - name: pipeline-workspace
+  params:
+    - name: repo-url
+      type: string
+      description: The URL of the git repository
+    - name: branch
+      type: string
+      description: The git branch to build
+      default: "main"
+    - name: build-image
+      type: string
+      description: Full name of the image to build and push (e.g. image-registry.openshift-image-registry.svc:5000/ns/app:latest)
+
+  tasks:
+    # 1. Clone the source code
+    - name: fetch-repo
+      taskRef:
+        name: git-clone
+        kind: ClusterTask
+      workspaces:
+        - name: output
+          workspace: pipeline-workspace
+      params:
+        - name: url
+          value: $(params.repo-url)
+        - name: revision
+          value: $(params.branch)
+
+    # 2. Lint step
+    - name: lint
+      runAfter:
+        - fetch-repo
+      taskRef:
+        name: flake8
+        kind: Task
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
+      params:
+        - name: args
+          value: ["service", "--count", "--max-complexity=10", "--max-line-length=127", "--statistics"]
+
+    # 3. Unit test step
+    - name: tests
+      runAfter:
+        - fetch-repo
+      taskRef:
+        name: nose
+        kind: Task
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
+      params:
+        - name: args
+          value: ["-v", "--with-spec", "--spec-color"]
+        - name: database_uri
+          value: "sqlite:///test.db"
+
+    # 4. Build the image (runs only after lint + tests pass)
+    - name: build
+      runAfter:
+        - lint
+        - tests
+      taskRef:
+        name: buildah
+        kind: ClusterTask
+      workspaces:
+        - name: source
+          workspace: pipeline-workspace
+      params:
+        - name: IMAGE
+          value: $(params.build-image)
+
+    # 5. Deploy step
+    - name: deploy
+      runAfter:
+        - build
+      taskRef:
+        name: openshift-client
+        kind: ClusterTask
+      workspaces:
+        - name: manifest-dir
+          workspace: pipeline-workspace
+      params:
+        - name: SCRIPT
+          value: |
+            echo "Deploying image $(params.build-image) ..."
+            oc set image deployment/accounts accounts=$(params.build-image) -n $(context.pipelineRun.namespace)
+            oc rollout status deployment/accounts -n $(context.pipelineRun.namespace)
